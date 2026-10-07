@@ -1,0 +1,5 @@
+{
+  "extends": "./.wxt/tsconfig.json",
+  "compilerOptions": { "strict": true, "jsx": "react-jsx", "target": "ES2022", "moduleResolution": "bundler", "types": ["vitest/globals"], "noUncheckedIndexedAccess": false },
+  "include": ["src", "tests", "wxt.config.ts", "vitest.config.ts", "vitest.setup.ts", ".wxt/wxt.d.ts"]
+}
