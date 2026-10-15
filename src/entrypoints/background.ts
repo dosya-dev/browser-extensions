@@ -6,6 +6,7 @@ import { loadTokens } from "../lib/store/auth-store";
 import { deleteBlob, getBlob, getItem, listItems, sweepItems, updateItem } from "../lib/store/items";
 import { createRunner, badgeText } from "../lib/queue/runner";
 import { applyOffscreenMessage, type OffscreenMessage } from "../lib/queue/offscreen-results";
+import { getAnimations } from "../lib/store/prefs";
 import { runUpload } from "../lib/upload/one-shot";
 import { uploadViaOffscreen } from "../lib/offscreen/manager";
 import { createHandlers } from "../lib/background/handlers";
@@ -55,21 +56,54 @@ export default defineBackground(() => {
   }
   /** A save is reported once, whichever of the two offscreen result paths arrives first. */
   const notified = new Set<string>();
-  function notifySaved(itemId: string, filename: string) {
+  function notifySaved(itemId: string, filename: string, thumb?: string) {
     if (notified.has(itemId)) return;
     notified.add(itemId);
     void notify("Saved to dosya", filename);
+    void flyOnPage(itemId, thumb);
+  }
+  /** The tab each capture came from, noted while its permission grant was live. */
+  const captureTabs = new Map<string, number>();
+  /**
+   * Draws the flight in the tab the capture came from.
+   *
+   * Messaging a content script that is ALREADY running needs no permission, so
+   * this tries that first: the script was injected at capture time, back when
+   * the click's `activeTab` grant was live. Injecting here is only a fallback
+   * for a tab that lost its script, and it is the step Safari refuses once the
+   * grant has lapsed. Best effort throughout: a tab that cannot take the script
+   * (a store page, a PDF) simply shows nothing.
+   */
+  async function flyOnPage(itemId: string, thumb?: string) {
+    const noted = captureTabs.get(itemId);
+    captureTabs.delete(itemId);
+    try {
+      if (!(await getAnimations())) return;
+      let tabId = noted;
+      if (typeof tabId !== "number") {
+        const [tab] = await browser.tabs.query({ active: true, lastFocusedWindow: true });
+        tabId = tab?.id;
+      }
+      if (typeof tabId !== "number") return;
+      const play = () => browser.tabs.sendMessage(tabId as number, { type: "play-save", thumb });
+      try {
+        await play();
+      } catch {
+        await ensurePageScript(tabId);
+        await play();
+      }
+    } catch { /* no page to draw on */ }
   }
   async function executor(item: SaveItem) {
     if (!uploadDirectly) {
       const r = await uploadViaOffscreen(item, (await loadTokens())?.accessToken ?? null);
-      if (r.kind === "done") notifySaved(item.id, item.filename);
+      if (r.kind === "done") notifySaved(item.id, item.filename, item.thumb);
       return r;
     }
     const keepalive = setInterval(() => { void browser.runtime.getPlatformInfo(); }, 20_000);
     try {
       const r = await runUpload(item, { client, getBlob });
-      if (r.kind === "done") void notify("Saved to dosya", item.filename);
+      if (r.kind === "done") notifySaved(item.id, item.filename, item.thumb);
       return r;
     } finally { clearInterval(keepalive); }
   }
@@ -79,6 +113,10 @@ export default defineBackground(() => {
   const handlers = createHandlers({
     client, refresher, runner, now: () => Date.now(),
     captureTab: () => browser.tabs.captureVisibleTab({ format: "png" }),
+    primeAnimation: (tabId, itemId) => {
+      captureTabs.set(itemId, tabId);
+      void ensurePageScript(tabId);
+    },
     activeTab: async () => { const [t] = await browser.tabs.query({ active: true, lastFocusedWindow: true }); return { id: t?.id ?? -1, title: t?.title ?? "", url: t?.url ?? "" }; },
     askPage: async (tabId) => { await ensurePageScript(tabId); return (await browser.tabs.sendMessage(tabId, { type: "page-selection" })) as { text: string; title: string; url: string }; },
     fetchImage: (u) => fetch(u, { credentials: "omit" }),
@@ -137,7 +175,7 @@ export default defineBackground(() => {
     await updateItem(msg.itemId, patch);
     if (patch.state === "done") {
       await deleteBlob(msg.itemId);
-      notifySaved(msg.itemId, item!.filename);
+      notifySaved(msg.itemId, item!.filename, item!.thumb);
     }
     await setBadge(badgeText(await listItems()));
   }

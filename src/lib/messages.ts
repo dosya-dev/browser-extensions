@@ -13,6 +13,8 @@ export interface Destination { workspaceId: string; workspaceName: string; folde
 export interface PopupState {
   signedIn: boolean; user: AuthUser | null; destination: Destination | null;
   recent: SaveItem[]; queued: number; waiting: number;
+  /** Whether the save flight is drawn on the page. */
+  animations: boolean;
 }
 export type Message =
   | { type: "get-state" }
@@ -21,6 +23,7 @@ export type Message =
   | { type: "save-screenshot" }
   | { type: "save-selection" }
   | { type: "set-destination"; destination: Destination }
+  | { type: "set-animations"; on: boolean }
   | { type: "retry"; itemId: string }
   | { type: "copy-link"; itemId: string; expiresDays: 7 | 30 | null }
   | { type: "get-token" }

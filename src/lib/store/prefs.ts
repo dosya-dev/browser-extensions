@@ -6,6 +6,9 @@ const set = <T>(key: string, value: T) => withStore("prefs", "readwrite", (s) =>
 export const getDestination = () => get<Destination>("destination");
 export const setDestination = (d: Destination) => set("destination", d);
 export const getRecentFolders = async () => (await get<Destination[]>("recentFolders")) ?? [];
+/** The save flight, on unless the person turned it off in the settings menu. */
+export const getAnimations = async () => (await get<boolean>("animations")) ?? true;
+export const setAnimations = (on: boolean) => set("animations", on);
 export async function rememberFolder(d: Destination): Promise<void> {
   const cur = (await getRecentFolders()).filter((x) => x.folderId !== d.folderId || x.workspaceId !== d.workspaceId);
   await set("recentFolders", [d, ...cur].slice(0, 5));

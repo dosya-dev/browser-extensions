@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Globe, Link2, Loader2 } from "lucide-react";
 import { send, type SaveItem } from "../../../lib/messages";
+import { copyNow } from "../../../lib/clipboard";
 
 function formatBytes(bytes: number): string {
   if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
@@ -55,7 +56,7 @@ export default function ShareDialog({ item, onClose }: { item: SaveItem; onClose
       // second case the link still exists, so show it for a manual copy.
       const made = await pending.catch(() => null);
       if (made) setUrl(made);
-      setError(made ? "Copy it from the box below" : (e instanceof Error ? e.message : "Could not create a link"));
+      setError(made ? "Safari would not let that click reach the clipboard. The link is ready:" : (e instanceof Error ? e.message : "Could not create a link"));
     } finally {
       setBusy(false);
     }
@@ -106,7 +107,22 @@ export default function ShareDialog({ item, onClose }: { item: SaveItem; onClose
 
         {error && <div role="alert" className="text-[11px] text-[#b45309]">{error}</div>}
         {url && error && (
-          <input readOnly value={url} onFocus={(e) => e.currentTarget.select()} aria-label="Share link" className="h-9 px-2.5 border border-[#e4e4e4] rounded-[10px] bg-[#fafafa] text-xs outline-none" />
+          <div className="flex gap-2">
+            <input
+              readOnly
+              value={url}
+              onFocus={(e) => e.currentTarget.select()}
+              aria-label="Share link"
+              className="flex-grow min-w-0 h-9 px-2.5 border border-[#e4e4e4] rounded-[10px] bg-[#fafafa] text-xs outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => { void copyNow(url).then((ok) => { if (ok) { setCopied(true); setError(null); } }); }}
+              className="shrink-0 h-9 px-3 rounded-[10px] border border-[#e4e4e4] bg-white text-xs font-medium cursor-pointer"
+            >
+              Copy
+            </button>
+          </div>
         )}
         <div className="flex gap-2">
           <button type="button" onClick={onClose} className="flex-grow h-[42px] border border-[#e4e4e4] rounded-[10px] bg-white text-[#181818] font-medium cursor-pointer">

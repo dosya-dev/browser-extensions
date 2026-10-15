@@ -2,7 +2,7 @@ import type { Message, PopupState, Destination, SaveItem } from "../messages";
 import type { Client } from "../api/client";
 import { createShareLink, listWorkspaces } from "../api/routes";
 import { loadTokens } from "../store/auth-store";
-import { getDestination, setDestination, rememberFolder, getPendingPkce, SIGN_IN_PENDING_MS } from "../store/prefs";
+import { getDestination, setDestination, rememberFolder, getPendingPkce, SIGN_IN_PENDING_MS, getAnimations, setAnimations } from "../store/prefs";
 import { listItems, putItem, deleteItem, updateItem } from "../store/items";
 import { captureImage, captureScreenshot, captureSelection } from "../capture/capture";
 import { imageFilename } from "../capture/filename";
@@ -15,6 +15,17 @@ export interface BackgroundContext {
   now(): number;
   captureTab(): Promise<string>; activeTab(): Promise<{ id: number; title: string; url: string }>;
   askPage(tabId: number): Promise<{ text: string; title: string; url: string }>;
+  /**
+   * Gets a tab ready to draw the save flight, and remembers it for this item.
+   *
+   * Called at CAPTURE time on purpose. Reaching into a page needs permission
+   * for it, and by default all the extension holds is `activeTab`, which the
+   * click or the shortcut grants. Chrome keeps that grant until the tab
+   * navigates, so injecting later worked there; Safari lets it lapse almost
+   * at once, so the injection at upload-completion time threw and the flight
+   * was silently never drawn.
+   */
+  primeAnimation?(tabId: number, itemId: string): void;
   fetchImage(url: string): Promise<Response>;
   fetchViaPage(tabId: number, url: string): Promise<{ bytes: Uint8Array; sha256: string; contentType: string }>;
   notify(title: string, message: string): Promise<void>; setBadge(text: string): Promise<void>;
@@ -44,6 +55,7 @@ export function createHandlers(ctx: BackgroundContext) {
     try {
       const activeTab = tab ?? (await ctx.activeTab());
       const item = await captureScreenshot({ captureTab: ctx.captureTab, activeTab: async () => ({ title: activeTab.title, url: activeTab.url }), destination, now: ctx.now() });
+      ctx.primeAnimation?.(activeTab.id, item.id);
       return afterCapture(item);
     } catch { return { ok: false, error: "no-page" }; }
   }
@@ -54,6 +66,7 @@ export function createHandlers(ctx: BackgroundContext) {
       const activeTab = tab ?? (await ctx.activeTab());
       const r = await captureSelection({ askPage: () => (preloaded ? Promise.resolve(preloaded) : ctx.askPage(activeTab.id)), destination, now: ctx.now() });
       if ("empty" in r) return { ok: false, error: "no-selection" };
+      ctx.primeAnimation?.(activeTab.id, r.id);
       return afterCapture(r);
     } catch { return { ok: false, error: "no-page" }; }
   }
@@ -78,6 +91,7 @@ export function createHandlers(ctx: BackgroundContext) {
       if (r.error === "blocked") await storeBlockedImage(imageUrl, tab, destination);
       return { ok: false, error: r.error };
     }
+    ctx.primeAnimation?.(tab.id, r.id);
     return afterCapture(r);
   }
   async function retryBlockedImage(item: SaveItem) {
@@ -96,7 +110,7 @@ export function createHandlers(ctx: BackgroundContext) {
     switch (msg.type) {
       case "get-state": {
         const t = await loadTokens(); const items = await listItems();
-        const state: PopupState = { signedIn: !!t, user: t?.user ?? null, destination: await getDestination(), recent: items.slice(0, 10),
+        const state: PopupState = { signedIn: !!t, user: t?.user ?? null, destination: t ? await destinationOrDefault() : null, animations: await getAnimations(), recent: items.slice(0, 10),
           queued: items.filter((i) => i.state === "queued" && i.nextAttemptAt <= ctx.now()).length + items.filter((i) => i.state === "uploading").length,
           waiting: items.filter((i) => i.state === "queued" && i.nextAttemptAt > ctx.now()).length };
         return state;
@@ -106,6 +120,7 @@ export function createHandlers(ctx: BackgroundContext) {
       case "save-screenshot": return saveScreenshot();
       case "save-selection": return saveSelection();
       case "set-destination": await setDestination(msg.destination); await rememberFolder(msg.destination); return { ok: true };
+      case "set-animations": await setAnimations(msg.on); return { ok: true };
       case "retry": {
         const item = (await listItems()).find((i) => i.id === msg.itemId);
         if (item && item.message === "blocked" && item.kind === "image" && item.imageUrl) {

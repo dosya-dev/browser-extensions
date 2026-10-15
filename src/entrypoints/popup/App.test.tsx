@@ -8,7 +8,7 @@ vi.mock("../../lib/messages", async (orig) => ({ ...(await orig<typeof import(".
 import App from "./App";
 
 const done: PopupState["recent"][number] = { id: "1", filename: "golden-hour-field.jpg", state: "done", kind: "image", sourceUrl: "https://u", sourceTitle: "U", workspaceId: "ws", folderId: "fo", folderName: "Autumn shoot", sha256: "", bytes: 10, createdAt: Date.now() - 1000, updatedAt: Date.now(), fileId: "file_1", message: null, attempts: 0, nextAttemptAt: 0 };
-const signedIn: PopupState = { signedIn: true, user: { id: "u", email: "firat@dosya.dev", name: "Firat Kaya" }, destination: { workspaceId: "ws", workspaceName: "Personal", folderId: "fo", folderName: "Autumn shoot" }, recent: [done, { ...done, id: "2", filename: "moodboard.webp", state: "queued", nextAttemptAt: Date.now() + 60000, message: "Waiting for network" }], queued: 0, waiting: 1 };
+const signedIn: PopupState = { signedIn: true, user: { id: "u", email: "firat@dosya.dev", name: "Firat Kaya" }, destination: { workspaceId: "ws", workspaceName: "Personal", folderId: "fo", folderName: "Autumn shoot" }, recent: [done, { ...done, id: "2", filename: "moodboard.webp", state: "queued", nextAttemptAt: Date.now() + 60000, message: "Waiting for network" }], queued: 0, waiting: 1, animations: true };
 
 let root: Root; let el: HTMLDivElement;
 beforeEach(() => { (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true; sendMock.mockReset(); el = document.createElement("div"); document.body.appendChild(el); root = createRoot(el); });
@@ -59,6 +59,55 @@ describe("popup, layout A", () => {
     expect(links[0]!.target).toBe("_blank");
     expect(links[0]!.querySelector("img")?.getAttribute("src")).toBe("data:image/jpeg;base64,AQID");
   });
+  it("the account button shows who is signed in and starts account deletion", async () => {
+    // Apple requires deletion to be reachable from inside the app. It finishes
+    // on dosya, because it needs a password and a confirmation, so what this
+    // pins is that the route STARTS here and lands on the deletion page itself
+    // rather than somewhere the person has to go looking.
+    sendMock.mockImplementation(async (m: { type: string }) => (m.type === "get-state" ? signedIn : { ok: true }));
+    await mount();
+    await click("Account");
+    const panel = el.querySelector("[role=dialog][aria-label=Account]");
+    expect(panel, "account panel").toBeTruthy();
+    expect(panel!.textContent).toContain("Firat Kaya");
+    expect(panel!.textContent).toContain("firat@dosya.dev");
+    const remove = Array.from(panel!.querySelectorAll("a")).find((a) => a.textContent?.includes("Delete account"));
+    expect(remove?.getAttribute("href")).toBe("https://app.dosya.dev/profile/delete");
+    expect(remove?.target).toBe("_blank");
+  });
+
+  it("settings offers Help and About alongside Sign out", async () => {
+    sendMock.mockImplementation(async (m: { type: string }) => (m.type === "get-state" ? signedIn : { ok: true }));
+    await mount();
+    await click("Settings");
+    const menu = el.querySelector("[role=menu]");
+    expect(menu, "settings menu").toBeTruthy();
+    const links = Object.fromEntries(
+      Array.from(menu!.querySelectorAll("a")).map((a) => [a.textContent?.trim(), a.getAttribute("href")]),
+    );
+    expect(links).toEqual({ Help: "https://dosya.dev/help/", About: "https://dosya.dev/about/" });
+    expect(menu!.textContent).toContain("Sign out");
+  });
+
+  it("settings carries an Animations switch that writes the preference", async () => {
+    sendMock.mockImplementation(async (m: { type: string }) => (m.type === "get-state" ? signedIn : { ok: true }));
+    await mount();
+    await click("Settings");
+    const toggle = el.querySelector("[role=menuitemcheckbox]") as HTMLButtonElement | null;
+    expect(toggle, "animations switch").toBeTruthy();
+    expect(toggle!.textContent).toContain("Animations");
+    expect(toggle!.getAttribute("aria-checked")).toBe("true");
+    await act(async () => { toggle!.click(); });
+    expect(sendMock).toHaveBeenCalledWith({ type: "set-animations", on: false });
+  });
+
+  it("shows the Animations switch off once the preference is off", async () => {
+    sendMock.mockImplementation(async (m: { type: string }) => (m.type === "get-state" ? { ...signedIn, animations: false } : { ok: true }));
+    await mount();
+    await click("Settings");
+    expect(el.querySelector("[role=menuitemcheckbox]")!.getAttribute("aria-checked")).toBe("false");
+  });
+
   it("copy link opens the dialog with 7 days preselected and copies the url", async () => {
     const writeText = vi.fn(async () => {}); Object.assign(navigator, { clipboard: { writeText } });
     sendMock.mockImplementation(async (m: { type: string }) => (m.type === "get-state" ? signedIn : m.type === "copy-link" ? { url: "https://dosya.dev/s/abc" } : { ok: true }));

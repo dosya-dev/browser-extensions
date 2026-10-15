@@ -11,11 +11,13 @@ import SignedOut from "./components/SignedOut";
 import ShareDialog from "./components/ShareDialog";
 import FolderPicker from "./components/FolderPicker";
 import PermissionBanner from "./components/PermissionBanner";
+import AccountPanel from "./components/AccountPanel";
 
 export default function App() {
   const { state, reload } = usePopupState();
   const [shareItem, setShareItem] = useState<SaveItem | null>(null);
   const [pickerOpen, setPickerOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
 
   if (!state) return null;
   if (!state.signedIn) return <SignedOut />;
@@ -29,7 +31,8 @@ export default function App() {
 
   return (
     <main className="relative w-[360px] h-[560px] box-border flex flex-col bg-[#fafafa] text-[#181818] text-[13px] leading-[1.4] border border-[#e4e4e4] rounded-xl overflow-hidden">
-      <Header user={state.user!} />
+      <Header user={state.user!} onOpenAccount={() => setAccountOpen(true)} />
+      {accountOpen && <AccountPanel user={state.user!} onClose={() => setAccountOpen(false)} />}
 
       <div className="px-3.5 pt-3.5 pb-2.5 flex flex-col gap-2.5">
         <DestinationRow destination={state.destination} onOpen={() => setPickerOpen(true)} />
@@ -55,7 +58,11 @@ export default function App() {
         onRetry={(itemId) => { void send({ type: "retry", itemId }); }}
       />
 
-      <Footer state={state} onSignOut={() => { void send({ type: "sign-out" }); }} />
+      <Footer
+        state={state}
+        onSignOut={() => { void send({ type: "sign-out" }); }}
+        onToggleAnimations={(on) => { void send({ type: "set-animations", on }).then(reload); }}
+      />
     </main>
   );
 }

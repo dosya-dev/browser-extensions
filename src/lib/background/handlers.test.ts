@@ -29,6 +29,28 @@ function ctx(over: Partial<Parameters<typeof createHandlers>[0]> = {}) {
 }
 const dest = { workspaceId: "ws", workspaceName: "P", folderId: "fo", folderName: "F" };
 describe("background handlers", () => {
+  it("initializes the signed-in destination before the first capture so the folder picker can open", async () => {
+    await saveTokens({ accessToken: "a", refreshToken: "r", user: { id: "u", email: "e", name: "n" } });
+    const c = ctx();
+    vi.mocked(c.client.json).mockResolvedValue({ workspaces: [{ id: "ws", name: "Personal", e2ee_mode: 0 }] });
+    const state = await createHandlers(c).handle({ type: "get-state" }) as import("../messages").PopupState;
+    expect(state.destination).toEqual({ workspaceId: "ws", workspaceName: "Personal", folderId: null, folderName: "Personal" });
+    expect(await listItems()).toEqual([]);
+  });
+  it("does not fetch or initialize a destination while signed out", async () => {
+    const c = ctx();
+    const state = await createHandlers(c).handle({ type: "get-state" }) as import("../messages").PopupState;
+    expect(state.destination).toBeNull();
+    expect(c.client.json).not.toHaveBeenCalled();
+  });
+  it("preserves the chosen destination when reopening the popup", async () => {
+    await saveTokens({ accessToken: "a", refreshToken: "r", user: { id: "u", email: "e", name: "n" } });
+    await setDestination(dest);
+    const c = ctx();
+    const state = await createHandlers(c).handle({ type: "get-state" }) as import("../messages").PopupState;
+    expect(state.destination).toEqual(dest);
+    expect(c.client.json).not.toHaveBeenCalled();
+  });
   it("signed out: a save is refused with signed-out, nothing stored, sign-in started", async () => {
     const c = ctx(); const h = createHandlers(c);
     expect(await h.handle({ type: "save-screenshot" })).toEqual({ ok: false, error: "signed-out" });
@@ -110,5 +132,33 @@ describe("background handlers", () => {
     const items = await listItems();
     expect(items).toHaveLength(1);
     expect(items[0]).toMatchObject({ id: "1", state: "failed", message: "blocked", imageUrl: "https://cdn.x.com/a.jpg" });
+  });
+
+});
+
+describe("the save flight is primed while the click's grant is live", () => {
+  // Safari drops the activeTab grant almost as soon as the gesture ends, so a
+  // tab reached into only at upload-completion time refuses the injection and
+  // the flight is never drawn. Every capture path has to claim its tab up front.
+  it("notes the tab and the item for a screenshot", async () => {
+    const primed: Array<[number, string]> = [];
+    await saveTokens({ accessToken: "a", refreshToken: "r", user: { id: "u", email: "e", name: "n" } });
+    await setDestination(dest);
+    const c = ctx({ primeAnimation: (tabId: number, itemId: string) => { primed.push([tabId, itemId]); } });
+    await createHandlers(c).handle({ type: "save-screenshot" });
+    expect(primed.length, "primed once").toBe(1);
+    expect(primed[0]![0], "the tab the capture came from").toBe(1);
+    const items = await listItems();
+    expect(primed[0]![1], "the item it belongs to").toBe(items[0]!.id);
+  });
+
+  it("notes the tab for a selection too", async () => {
+    const primed: Array<[number, string]> = [];
+    await saveTokens({ accessToken: "a", refreshToken: "r", user: { id: "u", email: "e", name: "n" } });
+    await setDestination(dest);
+    const c = ctx({ primeAnimation: (tabId: number, itemId: string) => { primed.push([tabId, itemId]); } });
+    await createHandlers(c).handle({ type: "save-selection" });
+    expect(primed.length).toBe(1);
+    expect(primed[0]![0]).toBe(1);
   });
 });

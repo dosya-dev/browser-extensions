@@ -203,6 +203,7 @@ public issue.
 
 | Repository | What it is | License |
 |---|---|---|
+| [wordpress](https://github.com/dosya-dev/wordpress) | WordPress plugin - backup, restore, migrate | GPL-2.0-or-later |
 | [browser-extensions](https://github.com/dosya-dev/browser-extensions) | Browser extension - Save to dosya for Chrome, Edge, Firefox | Source-available |
 | [desktop](https://github.com/dosya-dev/desktop) | Desktop client - sync, upload, manage | Source-available |
 | [cli](https://github.com/dosya-dev/cli) | Command-line interface | Source-available |

@@ -4,6 +4,7 @@ import { readCapped, classifyFetchFailure } from "../lib/capture/stream-cap";
 import { CHUNK, encodeChunk } from "../lib/capture/chunks";
 import { sha256Hex } from "../lib/pkce";
 import { truncateSelection } from "../lib/capture/selection";
+import { flySaveToCorner } from "../lib/animation/fly";
 export default defineContentScript({
   matches: ["<all_urls>"],
   registration: "runtime",
@@ -12,6 +13,15 @@ export default defineContentScript({
     if (g.__dosyaPageScript) return;
     g.__dosyaPageScript = true;
     browser.runtime.onMessage.addListener((msg: { type?: string }, _sender, sendResponse) => {
+      if (msg?.type === "play-save") {
+        const m = msg as { type: string; thumb?: string };
+        flySaveToCorner(document, {
+          thumb: m.thumb,
+          reduceMotion: window.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false,
+        });
+        sendResponse({ ok: true });
+        return true;
+      }
       if (msg?.type !== "page-selection") return;
       sendResponse({ text: truncateSelection(window.getSelection()?.toString() ?? ""), title: document.title, url: location.href });
       return true;
